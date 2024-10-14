@@ -259,7 +259,7 @@ export function anthropic(env: Record<string, string>): IAnthropicVertex {
   const createClient = (apiKey: string) => new Anthropic({ apiKey });
   const r = anthropicBase(createClient) as IAnthropicVertex;
   r.name = 'anthropic';
- // r.requiredEnv = ['ANTROPIC_API_KEY'];
+  r.requiredEnv = [];
   r.supportModels = [
     'claude-3-5-sonnet-20240620',
     'claude-3-opus-20240229',
