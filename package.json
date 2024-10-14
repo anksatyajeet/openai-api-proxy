@@ -1,4 +1,4 @@
-{
+{ 
   "name": "openai-api-proxy",
   "type": "module",
   "scripts": {
