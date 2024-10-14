@@ -1,23 +1,23 @@
-import { Hono } from 'hono'
-import { streamSSE } from 'hono/streaming'
-import { openai } from './llm/openai'
-import { anthropic, anthropicVertex } from './llm/anthropic'
-import OpenAI from 'openai'
-import { google } from './llm/google'
-import { deepseek } from './llm/deepseek'
-import { serializeError } from 'serialize-error'
-import { HTTPException } from 'hono/http-exception'
-import { cors } from 'hono/cors'
-import { moonshot } from './llm/moonshot'
-import { lingyiwanwu } from './llm/lingyiwanwu'
-import { groq } from './llm/groq'
-import { auzreOpenAI } from './llm/azure'
-import { bailian } from './llm/bailian'
-import { cohere } from './llm/cohere'
+import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import { openai } from './llm/openai';
+import { anthropic, anthropicVertex } from './llm/anthropic';
+import OpenAI from 'openai';
+import { google } from './llm/google';
+import { deepseek } from './llm/deepseek';
+import { serializeError } from 'serialize-error';
+import { HTTPException } from 'hono/http-exception';
+import { cors } from 'hono/cors';
+import { moonshot } from './llm/moonshot';
+import { lingyiwanwu } from './llm/lingyiwanwu';
+import { groq } from './llm/groq';
+import { auzreOpenAI } from './llm/azure';
+import { bailian } from './llm/bailian';
+import { cohere } from './llm/cohere';
 
 interface Bindings {
-  API_KEY: string
-  OPENAI_API_KEY: string
+  API_KEY: string;
+  OPENAI_API_KEY: string;
 }
 
 function getModels(env: Record<string, string>) {
@@ -33,70 +33,64 @@ function getModels(env: Record<string, string>) {
     auzreOpenAI(env),
     cohere(env),
     bailian(env),
-  ].filter((it) => it.requiredEnv.every((it) => it in env))
+  ].filter((it) => it.requiredEnv.every((it) => it in env));
 }
 
-// 生成 openai chat 的代理，https://api.openai.com/v1/chat/completions
-const app = new Hono<{
-  Bindings: Bindings
-}>()
-  /*
-curl https://api.openai.com/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{
-     "model": "gpt-4o-mini",
-     "messages": [{"role": "user", "content": "Say this is a test!"}],
-     "temperature": 0.7
-   }'
-*/
+const app = new Hono<{ Bindings: Bindings }>()
   .use(
     cors({
       origin: (_origin, c) => {
-        return c.env.CORS_ORIGIN
+        return c.env.CORS_ORIGIN;
       },
     }),
   )
   .use(async (c, next) => {
-    await next()
+    await next();
     if (c.error) {
       throw new HTTPException((c.error as any)?.status ?? 500, {
         message: serializeError(c.error).message,
-      })
+      });
     }
   })
   .options('/v1/chat/completions', async (c) => {
-    return c.json({ body: 'ok' })
+    return c.json({ body: 'ok' });
   })
   .use(async (c, next) => {
-    if (!c.env.API_KEY) {
-      return c.json({ error: 'Unauthorized' }, 401)
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return c.json({ error: 'Unauthorized' }, 401);
     }
-    if (`Bearer ${c.env.API_KEY}` !== c.req.header('Authorization')) {
-      return c.json({ error: 'Unauthorized' }, 401)
+    const token = authHeader.split(' ')[1];
+    if (token !== c.env.API_KEY) {
+      return c.json({ error: 'Unauthorized' }, 401);
     }
-    return next()
+    return next();
   })
   .post('/v1/chat/completions', async (c) => {
     const req = (await c.req.json()) as
       | OpenAI.ChatCompletionCreateParamsNonStreaming
-      | OpenAI.ChatCompletionCreateParamsStreaming
-    const list = getModels(c.env as any)
-    const llm = list.find((it) => it.supportModels.includes(req.model))
+      | OpenAI.ChatCompletionCreateParamsStreaming;
+
+    const list = getModels(c.env as any);
+    const llm = list.find((it) => it.supportModels.includes(req.model));
     if (!llm) {
-      return c.json({ error: `Model ${req.model} not supported` }, 400)
+      return c.json({ error: `Model ${req.model} not supported` }, 400);
     }
-    // console.log(req, llm.name)
+
+    // Pass x-api-key to the AI API
+    const apiKey = c.req.header('x-api-key');
+
     if (req.stream) {
-      const abortController = new AbortController()
+      const abortController = new AbortController();
       return streamSSE(c, async (stream) => {
-        stream.onAbort(() => abortController.abort())
-        for await (const it of llm.stream(req, abortController.signal)) {
-          stream.writeSSE({ data: JSON.stringify(it) })
+        stream.onAbort(() => abortController.abort());
+        for await (const it of llm.stream(req, abortController.signal, apiKey)) {
+          stream.writeSSE({ data: JSON.stringify(it) });
         }
-      })
+      });
     }
-    return c.json(await llm?.invoke(req))
+
+    return c.json(await llm?.invoke(req, apiKey));
   })
   .get('/v1/models', async (c) => {
     return c.json({
@@ -112,7 +106,7 @@ curl https://api.openai.com/v1/chat/completions \
             } as OpenAI.Models.Model),
         ),
       ),
-    } as OpenAI.Models.ModelsPage)
-  })
+    } as OpenAI.Models.ModelsPage);
+  });
 
-export default app
+export default app;
